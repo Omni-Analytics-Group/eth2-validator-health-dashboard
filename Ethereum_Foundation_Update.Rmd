@@ -1,0 +1,848 @@
+---
+title: "Tiering and Dashboarding ETH 2.0 Validator Behavior (Draft)"
+author: "Omni Analytics Group"
+output: bookdown::html_document2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,  warning = FALSE, message = FALSE, out.width = "100%", fig.height = 4, cache = TRUE)
+```
+
+# Introduction
+
+As part of the data visualization subdivision of Ethereum Foundation community staking grantees, our research seeks to provide graphical insights into the function and health of the network. Over the last few months, we have worked to update our analysis on the performance of validator nodes which was originally performed on the Medalla Testnet. In this article, we will provide an update on the progress, highlighting the work we’ve done both in terms of the data infrastructure and analysis. Specifically, the three major updates we’ve performed are as follows:
+
+1. Developed a robust data backend based on chaind for collecting and storing validators data.
+2. Analyzed the performance of validators across key metrics and visualizations, comparing the performance to our findings from the Medalla Testnet.
+3. Derived a new tier and scoring system to rank the validators across a variety of metrics.
+4. Deployed a real-time validator health dashboard that aggregates attestation and behavioral statistics from across the network.
+
+We will cover each of these pieces in this post.
+
+# Data Backend
+
+This section covers the steps we took to configure a database backend for the Validator analysis.
+
+## Overview
+
+The first major update was to create a robust and scalable data backend. For the Medalla Testnet, we collected the data ad-hoc in a data scraping procedure that extracted information from Beaconscan. For this update, we’ve built upon `chaind` to pull data directly from the Ethereum blockchain into a structured PostgreSQL database.
+
+## Technical Steps
+
+For the technically curious, these are the exact steps we took to configure the above setup on our Ubuntu 20.04 analytics server.
+
+1. Install a Beacon Node
+    1. Supported Beacon Nodes are Teku, Prysm, and Lighthouse. For performance reasons, Teku is recommended.
+    2. Full Teku installation instructions available at: https://docs.teku.consensys.net/en/latest/HowTo/Get-Started/Installation-Options/Install-Binaries/
+    3. Latest binary release available at: https://github.com/ConsenSys/teku/releases
+    4. Download the binary zip file
+    5. Unzip the archive
+2. Run a Beacon Node
+    1. cd into the Teku folder (at the time of writing, the latest release is 21.3.2. So the command would be cd teku-21.3.2.
+    2. cd into the bin folder
+    3. Execute Teku in Data Storage Archive mode, with the REST API enabled: teku --rest-api-enabled --data-storage-mode=archive
+    4. Teku will begin to sync the blocks and associated information from the Ethereum 2 Mainnet to the local machine. This process could take several hours. The current slot will indicate the most recent slot for Ethereum 2, while the head slot will indicated what the most recent slot synced is. For example, A sync that is about 5000 slots behind display logging along the lines of: 06:47:11.394 INFO - Sync Event *** Current slot: 922134, Head slot: 917151, Connected peers: 22
+    5. Once, fully synced, the logs should show something along the lines of 06:53:51.163 INFO - Slot Event *** Slot: 922167, Block: fd9e45..5701, Epoch: 28817, Finalized checkpoint: 28815, Finalized root: 522dc6..a6b7, Peers: 42 . This is the indication that all blocks have been synced, and we can proceed by installing and running chaind to populate our PostgreSQL database.
+3. Install PostgresSQL and configure an empty database
+    1. The following instructions assume the use of Ubuntu 20.04. Full documentation on this and other platforms is available at: https://www.digitalocean.com/community/tutorials/how-to-install-and-use-postgresql-on-ubuntu-20-04
+    2. Install the Postgres binary: sudo apt install postgresql postgresql-contrib
+    3. Create a role for chaind: sudo -u postgres createuser --interactive Follow the prompts, naming the new user chaind
+    4. Create a database for chaind:  sudo -u postgres createdb chaind
+    5. Login to the new database: sudo -u chaind psql
+    6. Set the database password: ALTER USER user_name WITH PASSWORD 'chaind';
+4. Install chaind
+    1. The following instructions use the Go Source installation method. Full installation instructions are available at: https://github.com/wealdtech/chaind#source
+    2. Install Go: sudo apt install golang-go
+    3. Download chaind with Go: GO111MODULE=on go get github.com/wealdtech/chaind
+5. Run chaind
+    1. Change directory to the location of the chaind binary: cd ~/go/bin
+    2. Execute the binary, providing both the Teku REST API url and the Postgres connection URL: chaind --chaindb.url=postgres://chaind:chaind@localhost:5432 --eth2client.address=localhost:5051
+    3. The database synchronization will now take place. This could take several more hours.
+6. Check the database sync progress
+    1. Access the database: sudo -u chaind psql
+    2. Check the metadata table: select * from t_metadata;
+    3. The latest slot and block will be displayed, which can be compared with the Ethereum Mainnet to see the progress of the database sync
+
+In Figure \@ref(fig:teku) our Teku Beacon node is catching up to the head slot. When it is complete, the data is available on the server for chaind to begin synchronization to the database.
+
+```{r teku, fig.cap="Left: A Teku Beacon node synchronizing from the Ethereum blockchain to our server. Right: A Teku Beacon node synchronizing from the Ethereum blockchain to our server.", fig.show="hold", out.width="50%"}
+knitr::include_graphics("images/teku.png")
+knitr::include_graphics("images/chaind.png")
+```
+
+The tables in this database now contain the data needed to recreate our validator analysis. With some minor manipulation and joins of the raw data, we obtain a dataset that matches the original structure of the data collected from the Medalla Testnet, which can be seen below:
+
+```{r, results='asis'}
+#load library
+library(tidyverse)
+library(stringi)
+library(gridExtra)
+library(patchwork)
+library(lubridate)
+library(httr)
+library(knitr)
+library(kableExtra)
+
+#Load data
+load("data/workspace.Rdata")
+
+valid_raw_o <- read_csv("data/validator_data.csv") 
+
+valid <- t_validators %>%
+  left_join(t_blocks) %>%
+  left_join(t_proposer_duties) %>%
+  left_join(t_validator_balances) %>%
+  mutate(effective_balance = effective_balance / 1000000000,
+         f_balance = f_balance / 1000000000,
+         executed = ifelse(is.na(executed), 0, executed),
+         assigned = ifelse(is.na(assigned), 0, assigned),
+         assigned = pmax(assigned, executed),
+         skipped = assigned - executed) %>%
+  rename(currentBalance = f_balance, eligibilityEpoch = activation_eligibility_epoch,
+         activationEpoch = activation_epoch, effectiveBalance = effective_balance,
+         exitEpoch = exit_epoch, withEpoch = withdrawable_epoch, publickey = public_key)
+
+valid_o <- valid_raw_o %>%
+    select(-X1) %>%
+    mutate(proposed = stri_trans_general(proposed, "latin-ascii")) %>%
+    separate(proposed, into = c("assigned", "executed", "skipped"),sep = " ", extra = "merge") %>%
+    mutate(across(c(assigned, executed, skipped, currentBalance, effectiveBalance), parse_number)) %>%
+    mutate(eligibilityEpoch = as.numeric(ifelse(eligibilityEpoch == "genesis", 0, eligibilityEpoch))) %>%
+    mutate(activationEpoch = as.numeric(ifelse(activationEpoch == "genesis", 0, activationEpoch))) %>%
+    mutate(exitEpoch = as.numeric(ifelse(exitEpoch == "genesis", 0, exitEpoch))) %>%
+    mutate(withEpoch = as.numeric(ifelse(activationEpoch == "withEpoch", 0, withEpoch)))
+
+valid_o %>%
+  slice(1:10) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped")
+```
+
+
+# Validator Performance
+
+In this section, we will survey the results from our new analysis of validator performance, comparing and contrasting the old (Medalla) results to the new results. At a high level, our findings indicate that validator performance has generally increased across the board.
+
+The Medalla Testnet data spanned 15,450 epochs and included a total of 80,392 validators overall, beginning with the genesis block on August 4th, 2020. By contrast, as of this writing (April 21st, 2021) the Ethereum Mainnet data includes 31,592 epochs with slots assigned to 121,335 validators, beginning from the genesis block on December 1st, 2020.
+
+## Activated Validators over Time
+
+Some epochs within the Medalla test phase activated more than 4 validators, this has not happened on the current Beacon chain.
+
+```{r}
+num_activated_o <- valid_o %>%
+    arrange(activationEpoch) %>%
+    group_by(activationEpoch) %>%
+    summarise(count = n())
+
+num_activated <- valid %>%
+    arrange(activationEpoch) %>%
+    group_by(activationEpoch) %>%
+    summarise(count = n())
+
+p1 <- num_activated_o %>% 
+  filter(activationEpoch>0) %>%
+  ggplot(aes(x=activationEpoch, y=count))+
+  geom_point(size=0.5)+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+      title = "Old",
+      subtitle = "Activated Validators over Time",
+      x = "Activation Epoch",
+      y = "Number of Activated Validators"
+    )
+
+p2 <- num_activated %>% 
+  filter(activationEpoch>0) %>%
+  ggplot(aes(x=activationEpoch, y=count))+
+  geom_point(size=0.5)+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+      title = "New",
+      subtitle = "Activated Validators over Time",
+      x = "Activation Epoch",
+      y = "Number of Activated Validators"
+    )
+
+p1 + p2
+```
+
+During the last 3000 or so epochs, there have been a number of attestation periods that have had fewer than the standard 4 validators activated within them.
+
+```{r}
+p3 <- num_activated_o %>% 
+    mutate(cume_count = cumsum(count)) %>%
+    ggplot(aes(x = activationEpoch, y = cume_count)) +
+    geom_line() +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "Old",
+        subtitle = "Activated Validators over Time",
+        x = "Activation Epoch",
+        y = "Cumulative Number of Activated Validators"
+    )
+p4 <- num_activated %>% 
+    mutate(cume_count = cumsum(count)) %>%
+    ggplot(aes(x = activationEpoch, y = cume_count)) +
+    geom_line() +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "New",
+        subtitle = "Activated Validators over Time",
+        x = "Activation Epoch",
+        y = "Cumulative Number of Activated Validators"
+    )
+p3 + p4
+```
+
+## Distribution of the Number of Block Assignments per Validator
+
+Constant validator inflows and outflows on the Medalla testnet saw a significant number of nodes without any assignments.  One of the first hints that we have that validators on the mainnet have been performing well, has been the larger average number of assignments.  The peak of the distribution for the mainnet on the right shows that many validators have been assigned to at least five attestations.  As we continue to track this specific distribution, it is likely to begin to skew leftward as the early cohorts successfully validate blocks.
+
+
+```{r}
+p5 <- valid_o %>%
+  group_by(assigned) %>%
+  ggplot(aes(x=assigned)) + 
+  geom_bar() + 
+  labs(
+    title = "Old",
+    subtitle = "Distribution of Assigned")
+
+p6 <- valid %>%
+  group_by(assigned) %>%
+  ggplot(aes(x=assigned)) + 
+  geom_bar() + 
+  labs(
+    title = "New",
+    subtitle = "Distribution of Assigned")
+
+p5+p6
+```
+
+## Assigned, Executed and Skipped
+
+When we begin to look more deeply at the breakdown of the assignments, executions and skips across the blocks we see a similar pattern where the steady performance, and time on the network, of the validators have increased the average number successful proposals per validator.  We can also see that the number of skipped slots has decreased dramatically when comparing the shape of the distribution and the average number between the two networks.
+
+```{r, fig.height = 5}
+p7 <- valid_o %>%
+    select(assigned, executed, skipped) %>%
+    gather(key = variable, value = value) %>%
+    group_by(variable, value) %>%
+    ggplot(aes(x = value, fill = variable)) +
+    geom_bar() +
+    scale_fill_brewer(palette = "Dark2") +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    facet_wrap(~variable, nrow = 3) +
+    labs(
+        title = "Old",
+        subtitle = "Distribution of Assigned, Executed, Skipped"
+    ) +
+    theme(legend.position = "off")
+
+p8 <- valid %>%
+    select(assigned, executed, skipped) %>%
+    gather(key = variable, value = value) %>%
+    group_by(variable, value) %>%
+    ggplot(aes(x = value, fill = variable)) +
+    geom_bar() +
+    scale_fill_brewer(palette = "Dark2") +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    facet_wrap(~variable, nrow = 3) +
+    labs(
+        title = "New",
+        subtitle = "Distribution of Assigned, Executed, Skipped"
+    ) +
+    theme(legend.position = "off")
+
+p7+plot_spacer()+p8 + plot_layout(widths = c(1,0.1,1))
+```
+
+## Execution Rate
+
+Given what we've seen above, it is no surprise that the execution rate, as measured by the number of executed blocks over assigned blocks, is much closer to 100% for all active validators on the Ethereum 2.0 mainnet.
+
+```{r}
+p9 <- valid_o %>%
+    mutate(`Execution Rate` = executed / assigned) %>%
+    ggplot(aes(x = `Execution Rate`)) +
+    geom_histogram(fill = "#EA5600") +
+    scale_x_continuous(labels = function(.) scales::percent(., accuracy = 1), breaks = seq(0, 1, by = .2)) +
+    labs(
+        title = "Old",
+        subtitle = "Distribution of Execution Rate"
+    )
+
+p10 <- valid %>%
+    mutate(`Execution Rate` = executed / assigned) %>%
+    ggplot(aes(x = `Execution Rate`)) +
+    geom_histogram(fill = "#EA5600") +
+    scale_x_continuous(labels = function(.) scales::percent(., accuracy = 1), breaks = seq(0, 1, by = .2)) +
+    labs(
+        title = "New",
+        subtitle = "Distribution of Execution Rate"
+    )
+
+p9 + p10
+
+```
+
+
+## Skipped Rate
+
+Likewise the skip rate, a measure of the number of blocks skipped divided by the number assigned, has plummeted which suggests that the validators are completing their attestation duties completely and correctly.
+
+```{r}
+p11 <- valid_o %>%
+    mutate(`Skipped Rate` = skipped / assigned) %>%
+    ggplot(aes(x = `Skipped Rate`)) +
+    geom_histogram(fill = "#776DB8") +
+    scale_y_continuous(labels = scales::comma, breaks = seq(0, 110000, by = 10000)) +
+    scale_x_continuous(labels = function(.) scales::percent(., accuracy = 1), breaks = seq(0, 1, by = .2)) +
+    labs(
+        title = "Old",
+        subtitle = "Distribution of Skipped Rate"
+    )
+
+p12 <- valid %>%
+    mutate(`Skipped Rate` = skipped / assigned) %>%
+    ggplot(aes(x = `Skipped Rate`)) +
+    geom_histogram(fill = "#776DB8") +
+    scale_y_continuous(labels = scales::comma, breaks = seq(0, 110000, by = 10000)) +
+    scale_x_continuous(labels = function(.) scales::percent(., accuracy = 1), breaks = seq(0, 1, by = .2)) +
+    labs(
+        title = "New",
+        subtitle = "Distribution of Skipped Rate"
+    )
+
+p11 + p12
+```
+
+
+## Distribution of Time to Exit
+
+The time to exit distribution is still right-skewed, with most exiting quite early. However, since the launching of mainnet, most misconfigured nodes actually leave within the first 200 hours. A secondary cluster peak was found at 1500 hours, which motivated the following analysis that looks into the time series of validator exits.
+
+```{r}
+p13 <- valid_o %>%
+    mutate(timeToExit = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    ggplot(aes(x = timeToExit)) +
+    geom_histogram(fill = "#EA5600", colour = "grey60") +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "Old",
+        subtitle = "Distribution of Time to Exit",
+        x = "Time to Exit (Hours)"
+    )
+p14 <- valid %>%
+    mutate(timeToExit = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    ggplot(aes(x = timeToExit)) +
+    geom_histogram(fill = "#EA5600", colour = "grey60") +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "New",
+        subtitle = "Distribution of Time to Exit",
+        x = "Time to Exit (Hours)"
+    )
+
+p13 + p14
+```
+
+
+## Exiting Validators by Epoch
+
+When looking at the exiting validators by epoch compared to the Medalla Testnet, we can immediately see that validators have taken their job more seriously. Only 144 validators have
+exited in the over 31,000 epochs tracked since the Beacon chain’s inception. There was a
+noticeable spike between 14,000 and 15,000.
+
+```{r}
+exits_o <- valid_o %>%
+  mutate(exitEpoch = factor(exitEpoch, levels = min(exitEpoch, na.rm=TRUE):max(exitEpoch, na.rm=TRUE))) %>%
+  group_by(exitEpoch, .drop=FALSE) %>%
+  filter(!is.na(exitEpoch)) %>%
+  summarise(count = n()) %>%
+  mutate(count_cume = cumsum(count)) %>%
+  mutate(exitEpoch = as.numeric(as.character(exitEpoch)))
+
+exits <- valid %>%
+  mutate(exitEpoch = factor(exitEpoch, levels = min(exitEpoch, na.rm=TRUE):max(exitEpoch, na.rm=TRUE))) %>%
+  group_by(exitEpoch, .drop=FALSE) %>%
+  filter(!is.na(exitEpoch)) %>%
+  summarise(count = n()) %>%
+  mutate(count_cume = cumsum(count)) %>%
+  mutate(exitEpoch = as.numeric(as.character(exitEpoch)))
+
+p15 <- ggplot(data = exits_o, aes(x = exitEpoch, y = count)) +
+  geom_line(color='blue') +
+  geom_point(data = exits %>% filter(count > 0)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    title = "Old",
+    subtitle = "Exiting Validators by Epoch",
+    x = "Exit Epoch",
+    y = "Count"
+  )
+
+p16 <- ggplot(data = exits, aes(x = exitEpoch, y = count)) +
+  geom_line(color='blue') +
+  geom_point(data = exits %>% filter(count > 0)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    title = "New",
+    subtitle = "Exiting Validators by Epoch",
+    x = "Exit Epoch",
+    y = "Count"
+  )
+
+p15 + p16
+```
+
+
+## Exiting Validators by Epoch - Cumulative
+
+Like the Medalla chain, the Beacon chain experiences spikes in exits over relatively short periods of time. Here between the Epoch 14000 and 15000 bands, we went from slightly over 40 exited validators to slightly more than 140. On a positive note, there are much longer periods of time where there are either no exits or very few per epoch.
+
+```{r}
+p17 <- ggplot(data = exits_o, aes(x = exitEpoch, y = count_cume)) +
+  geom_line() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    title = "Old",
+    subtitle = "Cumulative Exiting Validators by Epoch",
+    x = "Exit Epoch",
+    y = "Count"
+  )
+
+p18 <- ggplot(data = exits, aes(x = exitEpoch, y = count_cume)) +
+  geom_line() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    title = "New",
+    subtitle = "Cumulative Exiting Validators by Epoch",
+    x = "Exit Epoch",
+    y = "Count"
+  )
+
+p17 + p18
+```
+
+## Slashing Over Time
+
+Much like the exits over time, the number of slashings appear to occur in bulk where, again, the majority of slashings occurred during February 1st through 6th (epochs 14,000 and 15,000). As it turns out, this was due to a [double-signing mishap](https://blog.staked.us/blog/eth2-post-mortem) by a single staking provider.
+
+```{r}
+p19 <- valid_o %>% 
+  mutate(exitEpoch = factor(exitEpoch, levels = min(exitEpoch, na.rm=TRUE):max(exitEpoch, na.rm=TRUE))) %>%
+  filter(slashed == TRUE) %>% 
+  group_by(exitEpoch, .drop=FALSE) %>%
+  summarise(slashed = n()) %>% 
+  mutate(cume_slashed = cumsum(slashed)) %>%
+  mutate(exitEpoch = as.numeric(as.character(exitEpoch))) %>%
+  ggplot(aes(x = exitEpoch, y = cume_slashed)) +
+  geom_line() +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+      title = "Old",
+      subtitle = "Number of Slashed Validators over Time",
+      x = "Exit Epoch",
+      y = "Cumulative Number of Slashed Validators"
+  )
+
+p20 <- valid %>% 
+  mutate(exitEpoch = factor(exitEpoch, levels = min(exitEpoch, na.rm=TRUE):max(exitEpoch, na.rm=TRUE))) %>%
+  filter(slashed == TRUE) %>% 
+  group_by(exitEpoch, .drop=FALSE) %>%
+  summarise(slashed = n()) %>% 
+  mutate(cume_slashed = cumsum(slashed)) %>%
+  mutate(exitEpoch = as.numeric(as.character(exitEpoch))) %>%
+  ggplot(aes(x = exitEpoch, y = cume_slashed)) +
+  geom_line() +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+      title = "New",
+      subtitle = "Number of Slashed Validators over Time",
+      x = "Exit Epoch",
+      y = "Cumulative Number of Slashed Validators"
+  )
+
+p19 + p20
+```
+
+All in all, the theme of validators generally performing better than was see on the Medalla Testnet is prevalent through most of this analysis. We now turn our attention to deriving a new set of tiers based on the new data.
+
+# Tier and Score Derivation
+
+Using the Mainnet data, we performed the same feature derivation and clustering routine in order to attempt to derive a new tier distribution for the validators. However, when we applied the previous procedure directly to the mainnet data, our scoring system proved inadequate. Here is the distribution of scores obtained when applying the old procedure. You can immediately see that there is a lack of distinctiveness between tiers of validators, with the perfect validators linearly extrapolated along a scale, and imperfect validators below that. In other words, there is not enough differentiation obtained in order to neatly map this score distribution to validator tiers.
+
+```{r}
+valid_stats_o <- valid_o %>%
+  mutate(active = (is.na(exitEpoch)),
+         exitEpoch = ifelse(is.na(exitEpoch), 15579, exitEpoch),
+         active_time = 6.4 / 60 * (exitEpoch - activationEpoch),
+         executions = executed,
+         slashed = !slashed,
+         skips = -1*skipped) %>%
+  select(publickey, index, currentBalance, executions, skips, slashed, active, active_time) 
+
+valid_ranks_o <- valid_stats_o %>%
+    mutate(across(c(currentBalance, executions, skips, slashed, active, active_time), rank)) %>%
+    mutate(active_time = active_time / 4) %>%
+    gather(key = Variable, value = Rank, 3:ncol(.)) %>%
+    group_by(publickey) %>%
+    summarise(Score = sum(Rank)) %>%
+    mutate(Rank = rank(-1 * Score)) %>%
+    arrange(Rank)
+
+valid_all_o <- valid_stats_o %>% left_join(valid_ranks_o) %>%
+    mutate(slashed = !slashed, skips = -1 * skips) %>%
+    arrange(Rank)
+
+valid_stats <- valid %>%
+  mutate(active = (is.na(exitEpoch)),
+         exitEpoch = ifelse(is.na(exitEpoch), 15579, exitEpoch),
+         active_time = 6.4 / 60 * (exitEpoch - activationEpoch),
+         executions = executed,
+         slashed = !slashed,
+         skips = -1*skipped) %>%
+  select(publickey, index, currentBalance, executions, skips, slashed, active, active_time) 
+
+valid_ranks <- valid_stats %>%
+    mutate(across(c(currentBalance, executions, skips, slashed, active, active_time), rank)) %>%
+    mutate(active_time = active_time / 4) %>%
+    gather(key = Variable, value = Rank, 3:ncol(.)) %>%
+    group_by(publickey) %>%
+    summarise(Score = sum(Rank)) %>%
+    mutate(Rank = rank(-1 * Score)) %>%
+    arrange(Rank)
+
+valid_all <- valid_stats %>% left_join(valid_ranks) %>%
+    mutate(slashed = !slashed, skips = -1 * skips) %>%
+    arrange(Rank)
+```
+
+```{r}
+scores <- valid %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    mutate(slashed = !slashed, skipped = -1 * skipped) %>%
+    mutate(across(slashed:active_time, rank, ties.method = "average")) %>%
+    mutate(across(slashed:active_time, function(x) (x - min(x)) / (max(x) - min(x)))) %>%
+    mutate(Score = .51 * slashed + .19 * skipped + .19 * assigned + .06 * currentBalance + .05 * active_time) %>%
+    select(publickey, Score)
+
+valid_all <- valid %>%
+    left_join(scores) %>%
+    mutate(Tier = ifelse(executed == assigned & assigned >= 2 & !slashed, 1,
+                         ifelse(executed / assigned >= .9 & assigned >= 2 & !slashed, 2,
+                                ifelse(executed == assigned & assigned == 1 & !slashed, 3,
+                                       ifelse(executed == assigned & assigned == 0 & !slashed, 4,
+                                              ifelse(executed / assigned >= .5 & !slashed, 5,
+                                                     ifelse(executed / assigned <= .5 & !slashed, 6,
+                                                                   7))))))) %>%
+    mutate(Score = -(Tier/7 - Score)) %>%
+    mutate(Score = (Score - min(Score)) / (max(Score) - min(Score))) %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    group_by(Tier) %>%
+    mutate(Rank = rank(-Score, ties.method = "min")) %>%
+    ungroup() %>%
+    arrange(Tier, Rank) %>%
+    select(`Public Key` = publickey, `Successful Blocks` = executed, `Skipped Blocks` = skipped, `Time Active` = active_time, `Current Balance` = currentBalance, `Slashed` = slashed, Tier, Score, Rank)
+```
+
+```{r ugh, fig.cap="Sorted validator scores when applying old scoring procedure to Mainnet data (right) compared with the previous Medalla results (left).", out.width="50%", fig.show='hold', fig.height=8, fig.width=8}
+p24 <- valid_all_o %>% 
+  arrange(Score) %>% 
+  mutate(Index = 1:nrow(.)) %>%
+  ggplot(aes(x = Index, y = Score, color = Score)) +
+    geom_point() +
+    scale_color_gradientn(colors = rainbow(2), labels = scales::comma) +
+    scale_x_continuous(name="Index",labels = scales::comma, breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10),
+                       limits = c(0, 350000)) +
+    labs(
+        title = "Old",
+        subtitle = "Sorted Validator Scores"
+    )
+
+p24
+
+knitr::include_graphics("images/medalla_procedure_mainnet.png")
+```
+
+The reason for the breakdown is multi-fold. For the Medalla test data, the validator performance more naturally lent itself to a tier-based structure. The score thresholds were more distinct, and when analyzing the behavior within tiers, the behavior was more consistent. With the Mainnet data, largely due to the increase in validator performance across the board, our old thresholds failed to perform well - the vast majority of validators would have achieved tier 1. Furthermore, the distribution of scores was not normal, with several different areas along the curve with a skewed score distribution. 
+
+We then took an alternative approach. We decided to use the previous set of clusters to inform a pre-defined set of groupings that would provide coverage over the set of validators and their behavior. In this way, we ensure that the clusters themselves represent distinct and interesting behaviors with an implication as to their overall performance. Ultimately, we settled on the following 7 tiers:
+
+* Tier 1: Perfect, at least 2 assignments
+* Tier 2: Validators with 90% success rate
+* Tier 3: Perfect Inexperienced Nodes (1 success & 0 skipped)
+* Tier 4: Completely Inexperienced (0 and 0)
+* Tier 5: >= .5 Success rate
+* Tier 6: < .5 Success rate
+* Tier 7: Slashed and Left
+
+These thresholds allow validators to be placed into 7 tiers where we sort according to the number of assignments and time on the network. Within each tier, scores are derived using the numeric variables provided, preferring validators that have a large number of assignments, have been on the network the longest, and have the fewest skipped slots. Our pre-defined thresholds spread out the distribution of scores as we intended! When we compare the old scoring procedure to the new, the improvement in the distribution is immediately obvious.
+
+```{r ugh2, fig.cap="Sorted validator scores when applying new scoring procedure to Mainnet data (right) compared with the old scoring procedure (left).", out.width="50%", fig.show='hold', fig.height=8, fig.width=8}
+knitr::include_graphics("images/medalla_procedure_mainnet.png")
+
+p25 <- valid_all %>% 
+  arrange(Score) %>% 
+  mutate(Index = 1:nrow(.)) %>%
+  ggplot(aes(x = Index, y = Score, color = Score)) +
+    geom_point() +
+    scale_color_gradientn(colors = rainbow(2), labels = scales::comma) +
+    scale_x_continuous(name="Index",labels = scales::comma, breaks = scales::pretty_breaks(n = 4)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "New",
+        subtitle = "Sorted Validator Scores"
+    )+theme(legend.position = "none")
+
+p25
+```
+
+Finally, we can compare directly the final score distribution for our new approach to the original Medalla distribution and see that we've captured many of the original characteristics, with more well defined tiers and more differentiation between the tiers.
+
+```{r}
+p24 + p25
+```
+
+Once we sorted within the groupings we were able to finalize the tiers.
+
+```{r}
+valid_tiers_o <- valid_all_o %>% mutate(Tier = ifelse(Rank <= 2489, 1, ifelse(Rank <= 6942, 2, 
+                                ifelse(Rank <= 38396, 3, ifelse(Rank <= 56534, 4, 
+                                ifelse(Rank <= 67877, 5, ifelse(Rank <= 75644,6,7)))))))
+
+p26 <- valid_tiers_o %>% 
+    arrange(Score) %>% 
+    mutate(Index = 1:nrow(.)) %>%
+    ggplot(aes(x = Index, y = Score, color = Tier)) +
+    geom_point() +
+    scale_color_gradientn(colors = rev(rainbow(7))) +
+    scale_x_continuous(name="Index",labels = scales::comma, breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10),
+                       limits = c(0, 350000)) +
+    labs(
+        subtitle = "Sorted Validator Scores"
+    )+theme(legend.position = "none")
+
+p27 <- valid_all %>% 
+    arrange(Score) %>% 
+    mutate(Index = 1:nrow(.)) %>%
+    ggplot(aes(x = Index, y = Score, color = Tier)) +
+    geom_point() +
+    scale_color_gradientn(colors = rev(rainbow(7))) +
+    scale_x_continuous(name="Index",labels = scales::comma, breaks = scales::pretty_breaks(n = 4)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        subtitle = "Sorted Validator Scores"
+    )
+
+p26+p27
+```
+
+
+```{r}
+valid_summary_o <- valid_tiers_o %>%
+    select(Tier, Score) %>%
+    rbind(c(Tier = 7, Score = -Inf)) %>%
+    mutate(HighScore = c(Inf, head(Score, -1)))
+
+valid_summary <- valid_all %>%
+  mutate(Tier = factor(Tier)) %>%
+  group_by(Tier) %>%
+  summarise(HighScore = max(Score)) %>%
+  mutate(HighScore = ifelse(Tier == 1, Inf, HighScore)) %>%
+  ungroup() %>%
+  mutate(LowScore = c(tail(HighScore, 6), -Inf))
+
+p28 <- valid_tiers_o %>% 
+  arrange(Score) %>% 
+  mutate(Index = 1:nrow(.)) %>%
+  ggplot(aes(x = Index, y = Score)) +
+    geom_point() +
+    geom_rect(data=valid_summary_o, inherit.aes = FALSE,
+              aes(xmin = -Inf, xmax = Inf, ymin = Score, ymax = HighScore, fill = factor(Tier)), alpha = 0.2) +
+    scale_fill_manual("Tier", values = rev(rainbow(7))) +
+    scale_x_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10),
+                       limits = c(0, 400000)) +
+    labs(
+        title = "Sorted Validator Scores",
+        subtitle = "With tier-cutoffs illustrated"
+    )+theme(legend.position = "none")
+
+p29 <- valid_all %>% 
+  arrange(Score) %>% 
+  mutate(Index = 1:nrow(.)) %>%
+  ggplot(aes(x = Index, y = Score)) +
+    geom_point() +
+    geom_rect(data=valid_summary, inherit.aes = FALSE,
+              aes(xmin = -Inf, xmax = Inf, ymin = LowScore, ymax = HighScore, fill = factor(Tier)), alpha = 0.2) +
+    scale_fill_manual("Tier", values = rev(rainbow(7))) +
+    scale_x_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 4)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "Sorted Validator Scores",
+        subtitle = "With tier-cutoffs illustrated"
+    )
+
+p28 + p29
+```
+
+```{r}
+p30 <- ggplot(valid_tiers_o, aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(7)))+
+labs(
+        subtitle = "Distribution of Validator Scores Stacked by Tier"
+    )+theme(legend.position = "none")
+
+p31 <- ggplot(valid_all, aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(7)))+
+labs(
+        subtitle = "Distribution of Validator Scores Stacked by Tier"
+    )
+
+p30 + p31
+
+```
+
+
+```{r}
+p32 <- ggplot(valid_tiers_o, aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(7)))+
+labs(
+        subtitle = "Distribution of Validator Scores Stacked by Tier"
+    )+facet_wrap(vars(Tier))+theme(legend.position = "none")
+
+p33 <- ggplot(valid_all, aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(7)))+
+labs(
+        subtitle = "Distribution of Validator Scores Stacked by Tier"
+    )+facet_wrap(vars(Tier))
+
+p32 + p33
+```
+
+## Our New Tiers
+
+The most telling aspect of the new clustering is how well nearly ALL validators are performing. Tiers 6 and 7 would be considered non productive contributors having either been slashed or skipping more blocks than they’ve been assigned. Aside from these 440 errant validators, nearly every other participant has a positive impact on the network. There are over 93,000 validators who have perfect proposition rates with at least 2 assignments.
+
+From a macro perspective these tiers are differentiating the network validators behaviors effectively and show that the overall health of the network is good.
+
+```{r}
+vl <- t_validators %>%
+  left_join(t_blocks) %>%
+  left_join(t_proposer_duties) %>%
+  left_join(t_validator_balances) %>%
+  mutate(effective_balance = effective_balance / 1000000000,
+         f_balance = f_balance / 1000000000,
+         executed = ifelse(is.na(executed), 0, executed),
+         assigned = ifelse(is.na(assigned), 0, assigned),
+         assigned = pmax(assigned, executed),
+         skipped = assigned - executed) %>%
+  rename(currentBalance = f_balance, eligibilityEpoch = activation_eligibility_epoch,
+         activationEpoch = activation_epoch, effectiveBalance = effective_balance,
+         exitEpoch = exit_epoch, withEpoch = withdrawable_epoch, publickey = public_key)
+  scores <- vl %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    mutate(slashed = !slashed, skipped = -1 * skipped) %>%
+    mutate(across(slashed:active_time, rank, ties.method = "average")) %>%
+    mutate(across(slashed:active_time, function(x) (x - min(x)) / (max(x) - min(x)))) %>%
+    mutate(Score = .51 * slashed + .19 * skipped + .19 * assigned + .06 * currentBalance + .05 * active_time) %>%
+    select(publickey, Score)
+  x <- vl %>%
+    left_join(scores) %>%
+    mutate(Tier = ifelse(executed == assigned & assigned >= 2 & !slashed, 1,
+                         ifelse(executed / assigned >= .9 & assigned >= 2 & !slashed, 2,
+                                ifelse(executed == assigned & assigned == 1 & !slashed, 3,
+                                       ifelse(executed == assigned & assigned == 0 & !slashed, 4,
+                                              ifelse(executed / assigned >= .5 & !slashed, 5,
+                                                     ifelse(executed / assigned <= .5 & !slashed, 6,
+                                                                   7))))))) %>%
+    mutate(Score = -(Tier/7 - Score)) %>%
+    mutate(Score = (Score - min(Score)) / (max(Score) - min(Score))) %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    group_by(Tier) %>%
+    mutate(Rank = rank(-Score, ties.method = "min")) %>%
+    ungroup() %>%
+    arrange(Tier, Rank) %>%
+    select(`Public Key` = publickey, `Successful Blocks` = executed, `Skipped Blocks` = skipped, `Time Active` = active_time, `Current Balance` = currentBalance, `Slashed` = slashed, Tier, Score, Rank)
+  
+summary_table <- x %>% 
+    group_by(Tier) %>% 
+    add_count(Tier) %>%
+    summarise(across(c(n, `Time Active`, `Successful Blocks`, `Skipped Blocks`, `Slashed`), mean, na.rm = TRUE)) %>%
+    mutate(Slashed = Slashed*100) %>%
+    rename(Count = n, `Percentage Slashed` = Slashed) %>%
+    mutate(Description = c("Perfect Proposers with at least 2 assignments", "Validators with 90% success rate", "Perfect Inexperienced Nodes", "Completely Inexperienced", "All others with >= .5 Success rate", "Nodes with < .5 Success rate", "Slashed and Gone")) %>%
+    select(Tier, Description, everything())
+
+summary_table %>%
+  kable() %>%
+  kable_styling() %>%
+  row_spec(1, bold = TRUE, background = "#F3B6EA") %>%
+  row_spec(2, bold = TRUE, background = "#E8C4EF") %>%
+  row_spec(3, bold = TRUE, background = "#BACAE9") %>%
+  row_spec(4, bold = TRUE, background = "#C0EFD1") %>%
+  row_spec(5, bold = TRUE, background = "#B6F0B0") %>%
+  row_spec(6, bold = TRUE, background = "#E3EFC2") %>%
+  row_spec(7, bold = TRUE, background = "#F7C3C4")
+```
+
+## Our Dashboard
+
+Once these tiers were derived, our next task was to update the live dashboard. Figure \@ref(fig:dashboard) shows the updated dashboard with the latest data. We maintained the simple, functional design from the original interface, with two tabs:
+
+- *Statistics*: High-level statistics and charts about the performance of validators, as well as the tier breakdown table
+- *Data*: The raw data and tier/score assignment for each validator
+
+```{r dashboard, fig.cap="Left: The Statistics tab of our validator dashboard, highlighting the high level overview of the validator performance and tiers. Right: The Data tab of our validator dashboard, showing the performance and rank of each individual validator.", fig.show="hold", out.width="50%"}
+knitr::include_graphics("images/dashboard_statistics.png")
+knitr::include_graphics("images/dashboard_data.png")
+```
+
+The following statistics are provided in the dashboard:
+
+- Number of Validators - The total number of unique validators seen since the genesis block
+- Number of Slots - The total number of slots since the genesis block
+- Number of Skipped Slots - The total number of slots that were not executed by validators
+- Validators with Skipped Slots - The unique number of validators that had at least one assigned but not executed slot
+- Number of Epochs - The number of epochs that have passed since the genesis block
+- Number of Slashings - The total number of validators that have been slashed
+- Percentage of Perfect Validators - The percentage of all validators that have executed every block they've been assigned
+- Percentage of Slashed Validators - The percentage of all validators that have been slashed
+
+The tier labels and distributions are provided below the statistics, along with group averages across a number of the important statistics for each tier.
+
+# Call to Action
+
+While we are pleased with the results so far, this work is absolutely not complete. As the Ethereum blockchain continues to grow and more validators join the network, we would love assistance in continuing to develop robust statistics around validator performance, and methods for characterizing validator behavior. If you are interested in getting involved, please reach out to us on [twitter](https://twitter.com/OmniAnalytics).
+
+# Acknowledgements
+
+This article was written as part of an [Ethereum Foundation Staking Community Grant](https://blog.ethereum.org/2021/02/09/esp-staking-community-grantee-announcement/). Many thanks to both [Lakshman Sankar](https://twitter.com/lakshmansankar) and [Jim McDonald](https://twitter.com/jgm) for their technical assistance and support.
+
