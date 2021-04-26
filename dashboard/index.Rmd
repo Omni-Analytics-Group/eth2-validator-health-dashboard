@@ -1,0 +1,268 @@
+---
+title: "Validator Dashboard"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    theme: united
+    orientation: rows
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(flexdashboard)
+library(stringi)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(DBI)
+library(dplyr.teradata)
+library(lubridate)
+
+# Connect to the default postgres database
+#con <- dbConnect(RPostgres::Postgres(), host = "dev.omnianalytics.io", dbname = "chaind", user = "chaind", password = "chaind", port = 5432)
+
+#x <- dbGetQuery(con, "SELECT f_value FROM t_metadata WHERE f_key = 'summarizer.standard'")
+#epoch <- strsplit(strsplit(x$f_value, ",")[[1]][2], ": ")[[1]][2]
+
+load("../article/data/workspace.RData")
+```
+
+Statistics
+=====================================  
+
+
+```{r}
+valid <- function(){
+vl <- t_validators %>%
+  left_join(t_blocks) %>%
+  left_join(t_proposer_duties) %>%
+  left_join(t_validator_balances) %>%
+  mutate(effective_balance = effective_balance / 1000000000,
+         f_balance = f_balance / 1000000000,
+         executed = ifelse(is.na(executed), 0, executed),
+         assigned = ifelse(is.na(assigned), 0, assigned),
+         assigned = pmax(assigned, executed),
+         skipped = assigned - executed) %>%
+  rename(currentBalance = f_balance, eligibilityEpoch = activation_eligibility_epoch,
+         activationEpoch = activation_epoch, effectiveBalance = effective_balance,
+         exitEpoch = exit_epoch, withEpoch = withdrawable_epoch, publickey = public_key)
+
+  return(vl)
+}
+
+valid_rank <- reactive({
+    showModal(modalDialog("Pulling Latest BeaconScan Data, please wait...", footer=NULL))
+  
+  vl <- valid()
+  
+  scores <- vl %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    mutate(slashed = !slashed, skipped = -1 * skipped) %>%
+    mutate(across(slashed:active_time, rank, ties.method = "average")) %>%
+    mutate(across(slashed:active_time, function(x) (x - min(x)) / (max(x) - min(x)))) %>%
+    mutate(Score = .51 * slashed + .19 * skipped + .19 * assigned + .06 * currentBalance + .05 * active_time) %>%
+    select(publickey, Score)
+
+  x <- vl %>%
+    left_join(scores) %>%
+    mutate(Tier = ifelse(executed == assigned & assigned >= 2 & !slashed, 1,
+                         ifelse(executed / assigned >= .9 & assigned >= 2 & !slashed, 2,
+                                ifelse(executed == assigned & assigned == 1 & !slashed, 3,
+                                       ifelse(executed == assigned & assigned == 0 & !slashed, 4,
+                                              ifelse(executed / assigned >= .5 & !slashed, 5,
+                                                     ifelse(executed / assigned <= .5 & !slashed, 6,
+                                                                   7))))))) %>%
+    mutate(Score = -(Tier/7 - Score)) %>%
+    mutate(Score = (Score - min(Score)) / (max(Score) - min(Score))) %>%
+    mutate(exitEpoch = ifelse(is.na(exitEpoch), max_epoch, exitEpoch)) %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    group_by(Tier) %>%
+    mutate(Rank = rank(-Score, ties.method = "min")) %>%
+    ungroup() %>%
+    arrange(Tier, Rank) %>%
+    select(`Public Key` = publickey, `Successful Blocks` = executed, `Skipped Blocks` = skipped, `Time Active` = active_time, `Current Balance` = currentBalance, `Slashed` = slashed, Tier, Score, Rank)
+  
+  return(x)
+})
+
+summary_table <- reactive({
+  valid_rank() %>% 
+    group_by(Tier) %>% 
+    add_count(Tier) %>%
+    summarise(across(c(n, `Time Active`, `Successful Blocks`, `Skipped Blocks`, `Slashed`), mean, na.rm = TRUE)) %>%
+    mutate(Slashed = Slashed*100) %>%
+    rename(Count = n, `Percentage Slashed` = Slashed) %>%
+    mutate(Description = c("Perfect Proposers with at least 2 assignments", "Validators with 90% success rate", "Perfect Inexperienced Nodes", "Completely Inexperienced", "All others with >= .5 Success rate", "Nodes with < .5 Success rate", "Slashed and Gone")) %>%
+    select(Tier, Description, everything())
+})
+```
+
+
+Row {data-height=200}
+-----------------------------------------------------------------------
+
+### Number of Validators
+
+```{r}
+renderValueBox({
+  valueBox(nrow(valid()), icon = "fa-users")
+})
+```
+
+
+### Number of Slots
+
+```{r}
+renderValueBox({
+  valueBox(valid() %>% summarise(n = sum(assigned)), icon = "fa-th-large")
+})
+```
+
+### Number of Skipped Slots
+
+```{r}
+renderValueBox({
+  valueBox(valid() %>% summarise(n = sum(skipped)) %>% pull(n), icon = "fa-globe") 
+})
+```
+
+### Validators with Skipped Slots
+
+```{r}
+renderValueBox({
+  valueBox(valid() %>% filter(skipped > 0) %>% nrow(), icon = "fa-user-cog") 
+})
+```
+
+Row {data-height=200}
+-----------------------------------------------------------------------
+
+### Number of Epochs
+
+```{r}
+renderValueBox({
+  valueBox(epoch, icon = "fa-cube")
+})
+```
+
+### Number of Slashings
+
+```{r}
+renderValueBox({
+  valueBox(nrow(valid() %>% filter(slashed)), icon = "fa-times") 
+})
+```
+
+### Percentage of Perfect Validators
+
+```{r}
+renderValueBox({
+  valueBox(scales::percent((valid() %>% filter(assigned > 0, assigned == executed) %>% nrow) / nrow(valid()), accuracy = .1), icon = "fa-user", color = "green")
+})
+```
+
+### Percentage of Slashed Validators
+
+```{r}
+renderValueBox({
+  valueBox(scales::percent((valid() %>% filter(slashed) %>% nrow) / nrow(valid()), accuracy = .01), icon = "fa-times-circle",
+         color = "red")
+})
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Tier Distribution
+
+```{r, fig.width=12}
+valid_summary <- reactive({
+  valid_rank() %>%
+   #mutate(Score = ((1 / Tier) * 5 + Score) / 6) %>%
+    mutate(Tier = factor(Tier)) %>%
+    group_by(Tier) %>%
+    summarise(HighScore = max(Score)) %>%
+    mutate(HighScore = ifelse(Tier == 1, Inf, HighScore)) %>%
+    ungroup() %>%
+    mutate(LowScore = c(tail(HighScore, 6), -Inf))
+})
+
+renderPlot({
+  valid_rank() %>% 
+    #mutate(Score = ((1 / Tier) * 5 + Score) / 6) %>%
+    arrange(Score) %>% 
+    mutate(Index = 1:nrow(.)) %>%
+    ggplot(aes(x = Index, y = Score)) +
+      geom_point() +
+      geom_rect(data=valid_summary(), inherit.aes = FALSE,
+            aes(xmin = -Inf, xmax = Inf, ymin = LowScore, ymax = HighScore, fill = factor(Tier)), alpha = 0.2) +
+      scale_fill_manual("Tier", values = rev(rainbow(7))) +
+      scale_x_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+      scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+      labs(
+          title = "Sorted Validator Scores",
+          subtitle = "With tier-cutoffs illustrated"
+      )
+})
+```
+
+### Score Distribution
+
+```{r, fig.width=12}
+renderPlot({
+  ggplot(valid_rank(), aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(7)))+
+labs(
+        title = "Distribution of Validator Performance Scores Partitioned by Tier"
+    )+ facet_wrap(vars(Tier), scales = "free_y")
+})
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Tier Summary
+
+```{r}
+tableOutput("sum_kable")
+
+output$sum_kable <- function() {
+    removeModal()
+
+    summary_table() %>%
+      kable() %>%
+      kable_styling() %>%
+      row_spec(1, bold = TRUE, background = "#FBC9ED") %>%
+      row_spec(2, bold = TRUE, background = "#D6CBF8") %>%
+      row_spec(3, bold = TRUE, background = "#C9E0F7") %>%
+      row_spec(4, bold = TRUE, background = "#C6F5DF") %>%
+      row_spec(5, bold = TRUE, background = "#CDF5C7") %>%
+      row_spec(6, bold = TRUE, background = "#F7EDC8") %>%
+      row_spec(7, bold = TRUE, background = "#FDC9CA")
+}
+```
+
+Data
+=====================================  
+
+Row {data-height=450}
+-----------------------------------------------------------------------
+```{r}
+DT::renderDataTable({
+  DT::datatable(valid_rank() %>% mutate(across(where(is.numeric), round, digits = 4)), style = "bootstrap", options = list(
+  pageLength = 20
+))
+})
+```
+
+Row {data-height=100}
+-----------------------------------------------------------------------
+
+```{r}
+helpText(paste0("Data updated ", as_datetime(as.numeric(readLines("updated.txt")))))
+```
+
+
