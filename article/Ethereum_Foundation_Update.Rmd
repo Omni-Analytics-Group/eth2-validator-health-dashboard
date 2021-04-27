@@ -10,22 +10,22 @@ knitr::opts_chunk$set(echo = FALSE,  warning = FALSE, message = FALSE, out.width
 
 # Introduction
 
-As part of the data visualization subdivision of Ethereum Foundation community staking grantees, our research seeks to provide graphical insights into the function and health of the network. Over the last few months, we have worked to update our analysis on the performance of validator nodes which was originally performed on the Medalla Testnet. In this article, we will provide an update on the progress, highlighting the work we’ve done both in terms of the data infrastructure and analysis. Specifically, the three major updates we’ve performed are as follows:
+As part of the data visualization subdivision of Ethereum Foundation community staking grantees, our research seeks to provide graphical insights into the function and health of the network. Over the last few months, we have worked to update our analysis on the performance of validator nodes which was originally performed on the Medalla testnet. In this article, we will provide an update on the progress, highlighting the work we’ve done both in terms of the data infrastructure and analysis. Specifically, the four major updates we’ve performed are as follows:
 
-1. Developed a robust data backend based on chaind for collecting and storing validators data.
-2. Analyzed the performance of validators across key metrics and visualizations, comparing the performance to our findings from the Medalla Testnet.
-3. Derived a new tier and scoring system to rank the validators across a variety of metrics.
-4. Deployed a real-time validator health dashboard that aggregates attestation and behavioral statistics from across the network.
+1. Developed a robust data backend based on chaind for collecting and storing validator data.
+2. Analyzed the performance of validators across key metrics and visualizations, comparing current performance to our previous findings from the Medalla testnet.
+3. Derived a new tier and scoring process to rank the validators' behaviors.
+4. Deployed a real-time health dashboard that aggregates attestation and behavioral statistics from across the network.
 
-We will cover each of these pieces in this post.
+We will cover each of these updates in this post.
 
 # Data Backend
 
-This section covers the steps we took to configure a database backend for the Validator analysis.
+This section covers the steps we took to configure a database backend for the validator analysis.
 
 ## Overview
 
-The first major update was to create a robust and scalable data backend. For the Medalla Testnet, we collected the data ad-hoc in a data scraping procedure that extracted information from Beaconscan. For this update, we’ve built upon `chaind` to pull data directly from the Ethereum blockchain into a structured PostgreSQL database.
+The first major update was to create a robust and scalable data backend. For the Medalla testnet, we collected the data ad-hoc in a data scraping procedure that extracted information from Beaconscan. For this update, we’ve built upon `chaind` to pull data directly from the Ethereum blockchain into a structured PostgreSQL database.
 
 ## Technical Steps
 
@@ -70,7 +70,7 @@ knitr::include_graphics("images/teku.png")
 knitr::include_graphics("images/chaind.png")
 ```
 
-The tables in this database now contain the data needed to recreate our validator analysis. With some minor manipulation and joins of the raw data, we obtain a dataset that matches the original structure of the data collected from the Medalla Testnet, which can be seen below:
+The tables in this database now contain the data needed to recreate our validator analysis. With some minor manipulation and joins of the raw data, we obtain a dataset that matches the original structure of the data collected from the Medalla testnet, which can be seen below:
 
 ```{r, results='asis'}
 #load library
@@ -121,13 +121,13 @@ valid_o %>%
 
 # Validator Performance
 
-In this section, we will survey the results from our new analysis of validator performance, comparing and contrasting the old (Medalla) results to the new results. At a high level, our findings indicate that validator performance has generally increased across the board.
+In this section, we will survey the results from our new analysis of validator performance, comparing and contrasting the old (Medalla) results to the new results. At a high level, our findings indicate that validator performance has generally improved across the board.
 
-The Medalla Testnet data spanned 15,450 epochs and included a total of 80,392 validators overall, beginning with the genesis block on August 4th, 2020. By contrast, as of this writing (April 21st, 2021) the Ethereum Mainnet data includes 31,592 epochs with slots assigned to 121,335 validators, beginning from the genesis block on December 1st, 2020.
+The Medalla testnet data spanned 15,450 epochs and included a total of 80,392 validators overall, beginning with the genesis block on August 4th, 2020. By contrast, as of this writing (April 21st, 2021) the Ethereum Mainnet data includes 31,592 epochs with slots assigned to 121,335 validators, starting from the genesis block on December 1st, 2020.
 
 ## Activated Validators over Time
 
-Some epochs within the Medalla test phase activated more than 4 validators, this has not happened on the current Beacon chain.
+The Ethereum network is configured to activate four validators per epoch.  Interestingly, some epochs within the Medalla test phase activated more than 4 validators, but this has not happened on the current Beacon chain. The graphs do point out epochs within the current mainnet have on-boarded fewer than 4 validators.
 
 ```{r}
 num_activated_o <- valid_o %>%
@@ -169,7 +169,7 @@ p2 <- num_activated %>%
 p1 + p2
 ```
 
-During the last 3000 or so epochs, there have been a number of attestation periods that have had fewer than the standard 4 validators activated within them.
+During the last 3000 or so epochs, there have been a number of attestation periods that have had fewer than the standard 4 validators activated within them. This can be seen through the deviation of the line from its linear pattern.
 
 ```{r}
 p3 <- num_activated_o %>% 
@@ -201,7 +201,7 @@ p3 + p4
 
 ## Distribution of the Number of Block Assignments per Validator
 
-Constant validator inflows and outflows on the Medalla testnet saw a significant number of nodes without any assignments.  One of the first hints that we have that validators on the mainnet have been performing well, has been the larger average number of assignments.  The peak of the distribution for the mainnet on the right shows that many validators have been assigned to at least five attestations.  As we continue to track this specific distribution, it is likely to begin to skew leftward as the early cohorts successfully validate blocks.
+Constant validator inflows and outflows on the Medalla testnet saw a significant number of nodes without any assignments.  One of the first hints that we have that validators on the mainnet have been performing well has been the larger average number of assignments.  The peak of the distribution for the mainnet on the right shows that many validators have been assigned to at least five attestations.  As we continue to track this specific distribution, it is likely to begin to skew leftward as the early cohorts successfully validate blocks.
 
 
 ```{r}
@@ -226,7 +226,7 @@ p5+p6
 
 ## Assigned, Executed and Skipped
 
-When we begin to look more deeply at the breakdown of the assignments, executions and skips across the blocks we see a similar pattern where the steady performance, and time on the network, of the validators have increased the average number successful proposals per validator.  We can also see that the number of skipped slots has decreased dramatically when comparing the shape of the distribution and the average number between the two networks.
+When we begin to look more deeply at the breakdown of the assignments, executions and skips across the blocks we see a similar pattern where the steady performance, and time on the network of the validators, have increased with the average number successful proposals per validator.  We can also see that the number of skipped slots has decreased dramatically when comparing the shape of the distribution and the average number between the two networks.
 
 ```{r, fig.height = 5}
 p7 <- valid_o %>%
@@ -266,7 +266,7 @@ p7+plot_spacer()+p8 + plot_layout(widths = c(1,0.1,1))
 
 ## Execution Rate
 
-Given what we've seen above, it is no surprise that the execution rate, as measured by the number of executed blocks over assigned blocks, is much closer to 100% for all active validators on the Ethereum 2.0 mainnet.
+Given what we've seen above it is no surprise that the execution rate, as measured by the number of executed blocks over assigned blocks, is much closer to 100% for all active validators on the Ethereum 2.0 mainnet.
 
 ```{r}
 p9 <- valid_o %>%
@@ -357,9 +357,8 @@ p13 + p14
 
 ## Exiting Validators by Epoch
 
-When looking at the exiting validators by epoch compared to the Medalla Testnet, we can immediately see that validators have taken their job more seriously. Only 144 validators have
-exited in the over 31,000 epochs tracked since the Beacon chain’s inception. There was a
-noticeable spike between 14,000 and 15,000.
+When looking at the exiting validators by epoch compared to the Medalla testnet, we can immediately see that validators have taken their job more seriously. Only 144 validators have
+exited in the over 31,000 epochs tracked since the Beacon chain’s inception. Curiously, there was a noticeable spike between 14,000 and 15,000.
 
 ```{r}
 exits_o <- valid_o %>%
@@ -406,7 +405,7 @@ p15 + p16
 
 ## Exiting Validators by Epoch - Cumulative
 
-Like the Medalla chain, the Beacon chain experiences spikes in exits over relatively short periods of time. Here between the Epoch 14000 and 15000 bands, we went from slightly over 40 exited validators to slightly more than 140. On a positive note, there are much longer periods of time where there are either no exits or very few per epoch.
+Like the Medalla chain, the Beacon chain experiences spikes in exits over relatively short periods of time. Here between the Epoch 14000 and 15000 bands, we went from slightly over 40 exited validators to a little more than 140. On a positive note, there are much longer periods of time where there are either no exits or very few per epoch.
 
 ```{r}
 p17 <- ggplot(data = exits_o, aes(x = exitEpoch, y = count_cume)) +
@@ -478,7 +477,7 @@ p20 <- valid %>%
 p19 + p20
 ```
 
-All in all, the theme of validators generally performing better than was see on the Medalla Testnet is prevalent through most of this analysis. We now turn our attention to deriving a new set of tiers based on the new data.
+All in all, the theme of validators generally performing better than was see on the Medalla testnet is prevalent through most of this analysis. We now turn our attention to deriving a new set of tiers based on the new data.
 
 # Tier and Score Derivation
 
@@ -580,7 +579,7 @@ p24
 knitr::include_graphics("images/medalla_procedure_mainnet.png")
 ```
 
-The reason for the breakdown is multi-fold. For the Medalla test data, the validator performance more naturally lent itself to a tier-based structure. The score thresholds were more distinct, and when analyzing the behavior within tiers, the behavior was more consistent. With the Mainnet data, largely due to the increase in validator performance across the board, our old thresholds failed to perform well - the vast majority of validators would have achieved tier 1. Furthermore, the distribution of scores was not normal, with several different areas along the curve with a skewed score distribution. 
+The reason for the breakdown is multi-fold. For the Medalla test data, the validator performance more naturally lent itself to a tier-based structure. The score thresholds were more distinct, and when analyzing the behavior within tiers, the behavior was more consistent. With the Mainnet data, largely due to the increase in validator performance across the board, our old thresholds failed to perform well - the vast majority of validators would have achieved a Tier 1 ranking. Furthermore, the distribution of scores was not normal, with several different areas along the curve with a skewed score distribution. 
 
 We then took an alternative approach. We decided to use the previous set of clusters to inform a pre-defined set of groupings that would provide coverage over the set of validators and their behavior. In this way, we ensure that the clusters themselves represent distinct and interesting behaviors with an implication as to their overall performance. Ultimately, we settled on the following 7 tiers:
 
@@ -747,7 +746,7 @@ p32 + p33
 
 ## Our New Tiers
 
-The most telling aspect of the new clustering is how well nearly ALL validators are performing. Tiers 6 and 7 would be considered non productive contributors having either been slashed or skipping more blocks than they’ve been assigned. Aside from these 440 errant validators, nearly every other participant has a positive impact on the network. There are over 93,000 validators who have perfect proposition rates with at least 2 assignments.
+The most telling aspect of the new clustering is how well nearly ALL validators are performing. Tiers 6 and 7 would be considered non productive contributors having either been slashed or skipping more blocks than they’ve been assigned. Aside from these 440 errant validators, almost every other participant has a positive impact on the network. There are over 93,000 validators who have perfect proposition rates with at least 2 assignments.
 
 From a macro perspective these tiers are differentiating the network validators behaviors effectively and show that the overall health of the network is good.
 
