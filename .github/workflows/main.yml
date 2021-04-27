@@ -33,4 +33,7 @@ jobs:
             mkdir test
             cd test
             git -c core.sshCommand="ssh -i /home/erichare/.ssh/id_rsa_do" clone git@github.com:Omni-Analytics-Group/eth2-validator-health-dashboard.git
+            cp -Rf eth2-validator-health-dashboard/dashboard/* /home/erichare/GitLab/crypto/masternode/apps/public/beaconscan
+            cp -Rf eth2-validator-health-dashboard/article /home/erichare/GitLab/crypto/masternode/apps/public
+            cp eth2-validator-health-dashboard/article/Ethereum_Foundation_Update.html /var/www/html/validator-tiering/index.html
             echo "Deployment successful"
