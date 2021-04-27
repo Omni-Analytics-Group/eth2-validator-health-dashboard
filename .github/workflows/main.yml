@@ -30,6 +30,7 @@ jobs:
           username: ${{secrets.SSH_USERNAME}}
           
           script: |
+            rm -rf test
             mkdir test
             cd test
             git -c core.sshCommand="ssh -i /home/erichare/.ssh/id_rsa_do" clone git@github.com:Omni-Analytics-Group/eth2-validator-health-dashboard.git
