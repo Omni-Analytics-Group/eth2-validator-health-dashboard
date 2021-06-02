@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Report.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="ethereum-20-validator-health-and-behavior">Ethereum 2.0 Validator Health and Behavior</h1>
+<p>This report is written as an analysis of <a href="https://crypto.omnianalytics.io/2021/05/14/tiering-and-dashboarding-eth-2-0-validator-behavior/">OmniAnalytic's Report</a>
+of a similar name with suggestions and recommended improvements.</p>
+<h1 id="methodology">Methodology</h1>
+<p>The Methodology of their data collection was very accurate scraping data directly from the blockchain removing the need for a data aggregator to do it for them which would have introduced a potential source of inaccuracy. The only suggestion I can provide here is to increase the scope of data being collected to also include validator earnings to get a better understanding of how much validators are earning or losing. This can provide insight into how pseudo-random work distribution affects earnings as well as how much the average and median validators are earning. A good place to get started would be to check out this <a href="https://beaconcha.in/validators/leaderboard">leaderboard</a>) of validators and see how earnings are distributed.</p>
+<h1 id="suggested-additional-metrics">Suggested Additional Metrics</h1>
+<p><strong>Client Variation</strong></p>
+<p>One metric that can be used to measure complex blockchains that could be added to get a better picture of Ethereum 2.0's health is Client Distribution. Client's are open to bugs, so the more clients being run and the more equal the split between the clients the network becomes more resistant to the bugs of one specific client. The risks of this were seen with the Medalla Testnet running into an issue relating to time on the Prysm Client. (Further reading <a href="https://medium.com/prysmatic-labs/eth2-medalla-testnet-incident-f7fbc3cc934a">here</a>) A good place to start looking for client distribution can be seen beaconcha.in as seen <a href="https://beaconcha.in/ethClients">here</a></p>
+<h1 id="suggestions-on-tiering-system">Suggestions on Tiering System</h1>
+<p>The initial tiering system provided insight into how each node is performing on the network from the various different possibilities. I recommend switching to a system that instead looks to measure the positive or negative impact validators are having on the network. The tiering system featured in the report is shown below</p>
+<ul>
+<li>Tier 1: Perfect, at least 2 assignments</li>
+<li>Tier 2: Validators with 90% success rate</li>
+<li>Tier 3: Perfect Inexperienced Nodes (1 success &amp; 0 skipped)</li>
+<li>Tier 4: Completely Inexperienced (0 and 0)</li>
+<li>Tier 5: &gt;= .5 Success rate</li>
+<li>Tier 6: &lt; .5 Success rate</li>
+<li>Tier 7: Slashed and Left</li>
+</ul>
+<p>I propose the following system to better demonstrate how each node is contributing to the network.</p>
+<ul>
+<li>Tier 1 Perfect Proposers with at least 2 assignments</li>
+<li>Tier 2 Validators with 90% success rate</li>
+<li>Tier 3 All others with a &lt;= 75% success rate</li>
+<li>Tier 4 Perfectly Inexperienced Nodes</li>
+<li>Tier 5 Completely Inexperienced Nodes</li>
+<li>Tier 6 Nodes with &gt;= 75% success rate</li>
+<li>Tier 7 Slashed and Gone</li>
+</ul>
+<p>After implementing these rules to sort out the data, I wrote some python to create a preview of what this distribution looks like below</p>
+<pre class="hljs"><code><div>sorttiers()
+plt.plot([len(tier7) + len(tier6) + len(tier5) + len(tier4) + len(tier3) + len(tier2), len(tier7) + len(tier6) + len(tier5) + len(tier4) + len(tier3) + len(tier2) + len(tier1)], [7,7], label = &quot;Tier 1&quot;)
+plt.plot([len(tier7) + len(tier6) + len(tier5) + len(tier4) + len(tier3), len(tier7) + len(tier6) + len(tier5) + len(tier4) + len(tier3) + len(tier2)], [6,7], label = &quot;Tier 2&quot;)
+plt.plot([len(tier7) + len(tier6) + len(tier5) + len(tier4), len(tier7) + len(tier6) + len(tier5) + len(tier4) + len(tier3)], [5,6], label = &quot;Tier 3&quot;)
+plt.plot([len(tier7) + len(tier6) + len(tier5), len(tier7) + len(tier6) + len(tier5) + len(tier4)], [4,5], label = &quot;Tier 4&quot;)
+plt.plot([len(tier7) + len(tier6), len(tier7) + len(tier6) + len(tier5)], [3,4], label = &quot;Tier 5&quot;)
+plt.plot([len(tier7), len(tier7) + len(tier6)], [2, 3], label = &quot;Tier 6&quot;)
+plt.plot([0, len(tier7)], [1, 2], label = &quot;Tier 7&quot;)
+plt.legend(loc = 'best')
+plt.show()
+</div></code></pre>
+<h2 id="data-comparison">Data Comparison</h2>
+<p>The first graph shows the data distribution using the revised set of rules, with the one following it showing the data distribution using the rules outlined in the report by Omni Analytics.</p>
+<img src = 'ValidatorHealth.png'>
+<p>The distribution didn't change significantly, but the lower tiers did increase. This is because most validators are able to achieve extraordinary uptime and task completion as they are incentivized to do so to earn the most.</p>
+<img src = 'Original Data.png'>
+<p>The distribution of the Original Rules has more nodes categorized in Tier 5, while the revised set has more nodes inside of tier 3. This is most likely because the majority of non-perfect nodes are between the 75% and 90% success rate, so they fall in tier 5 based on the original rules, and tier 3 according to the revised tier rules.</p>
+<p>The data is also re-organized into tables shown below. Skipped blocks and successful blocks are both averages for their tiers. It is also important to note that when importing the data from the csv into a pandas dataframe some data like epochs active was changed so the tables should be compared only to each other, and not the one in the report as the same source can not be confirmed between the 2, only similar data.</p>
+<p><strong>Modified Tiers</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Tier</th>
+<th style="text-align:center">Description</th>
+<th style="text-align:center">Count</th>
+<th style="text-align:center">Successful Blocks</th>
+<th style="text-align:center">Skipped Blocks</th>
+<th style="text-align:right">Percentage Slashed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:center">Perfect Proposers with at least 2 assignments</td>
+<td style="text-align:center">108145</td>
+<td style="text-align:center">8.541735632715335</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:center">Validators with 90% success rate</td>
+<td style="text-align:center">10301</td>
+<td style="text-align:center">5.701018922852984</td>
+<td style="text-align:center">0.3984473556525</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:center">All others with a &lt;= 75% success rate</td>
+<td style="text-align:center">2070</td>
+<td style="text-align:center">6.671497584541063</td>
+<td style="text-align:center">1.258454106280193</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:center">Perfectly Inexperienced Nodes</td>
+<td style="text-align:center">100</td>
+<td style="text-align:center">1</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">5</td>
+<td style="text-align:center">Completely Inexperienced Nodes</td>
+<td style="text-align:center">144</td>
+<td style="text-align:center">0</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:center">Nodes with &gt;= 75% success rate</td>
+<td style="text-align:center">570</td>
+<td style="text-align:center">3.805263157894737</td>
+<td style="text-align:center">2.615789473684210</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">7</td>
+<td style="text-align:center">Slashed and Left</td>
+<td style="text-align:center">50</td>
+<td style="text-align:center">0.86</td>
+<td style="text-align:center">0.18</td>
+<td style="text-align:right">100</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Original Tiers</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Tier</th>
+<th style="text-align:center">Description</th>
+<th style="text-align:center">Count</th>
+<th style="text-align:center">Successful Blocks</th>
+<th style="text-align:center">Skipped Blocks</th>
+<th style="text-align:right">Percentage Slashed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:center">Perfect, at least 2 assignments</td>
+<td style="text-align:center">108145</td>
+<td style="text-align:center">8.541735632715335</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:center">Validators with 90% success rate</td>
+<td style="text-align:center">10301</td>
+<td style="text-align:center">5.70041743520046</td>
+<td style="text-align:center">0.3983108436074</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:center">Perfect Inexperienced Nodes (1 success &amp; 0 skipped)</td>
+<td style="text-align:center">100</td>
+<td style="text-align:center">1</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:center">Completely Inexperienced (0 and 0)</td>
+<td style="text-align:center">144</td>
+<td style="text-align:center">0</td>
+<td style="text-align:center">0</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">5</td>
+<td style="text-align:center">&gt;= .5 Success rate</td>
+<td style="text-align:center">2570</td>
+<td style="text-align:center">6.149416342412452</td>
+<td style="text-align:center">1.45486381322957</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:center">&lt; .5 Success rate</td>
+<td style="text-align:center">70</td>
+<td style="text-align:center">2.560606060606060</td>
+<td style="text-align:center">5.3181818181818</td>
+<td style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">7</td>
+<td style="text-align:center">Slashed and Left</td>
+<td style="text-align:center">50</td>
+<td style="text-align:center">0.86</td>
+<td style="text-align:center">0.18</td>
+<td style="text-align:right">100</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Justification</strong></p>
+<ul>
+<li>
+<p>Changing the percentage of successful jobs from 50% to 75%. I felt this was a good choice to show network health because at a 50% success rate a validator's net impact is 0, so to make these tiers better reflect validators contributing with low performance I decided to switch to 75% as a threshold. The reason a validator with a 50% success rate has no net contribution to the network is since the number of jobs they are skipping actively hurts the efficiency of the network close to the same amount as the one they are getting right. Missing blocks means transactions that could've been finalized are not, and if too many validators are skipping blocks then block creation times slow down for the network leading to fewer transactions being processed. This is why I switched the threshold to 75%, as each percent above 50 is a higher positive impact on the network, so 75% shows the point where a node is has begun to contribute positively towards the network in a significant way marking the midway between 100% and 50%. It is also important to note this method punishes both inefficient and dishonest behavior, rather than just dishonest behavior.</p>
+</li>
+<li>
+<p>Moving Completely Inexperienced Nodes to tier 5. I suggest this change in tier because an inexperienced node has a net 0 impact on the network in that it isn't contributing anything, but it isn't doing anything wrong. So it makes sense to put it in between positive and negative nodes.</p>
+</li>
+<li>
+<p>I suggest moving Perfect Inexperienced Nodes to Tier 4 because despite having no negative impact, their overall contribution to the network is little due to a little amount of work contributed. So their impact is just above no impact as they only provided 1 block worth of transactions.</p>
+</li>
+</ul>
+<h1 id="scoring-nodes">Scoring Nodes</h1>
+<p>Looking through the sorted Validator scores I felt that the tiered metrics still fell short of fully showcasing validators contribution to the network. I suggest using tier as a coefficient that is then multiplied by epochs active. This score would then reflect how impactful a validator was in helping or hurting the network.
+The exact coefficients are up for debate, but I do have some recommended guidelines.</p>
+<p><strong>Justification</strong></p>
+<ul>
+<li>
+<p>The reason time active is important is because nodes are penalized for going offline, and exponentially increasing the more other nodes go inactive. This is because lots of offline increase the exposure to attacks, and the weight malicious blocks have if there aren't enough correct blocks to achieve consensus with current blocks.</p>
+</li>
+<li>
+<p>This is also important to weigh the overall impact a node has, as a node that does great work infrequently is worse than a node that does good work frequently because the good node leads to more tx's being processed.</p>
+</li>
+<li>
+<p>Tier 1 has Highest Coefficient</p>
+</li>
+<li>
+<p>Tier 5 has a Coefficient of 0, because nodes aren't contributing positively to the network's security</p>
+</li>
+<li>
+<p>Tiers 6 and 7 have a negative coefficient because their contributions to the network hurt it with inaccurate jobs and bad behavior.</p>
+</li>
+</ul>
+<h1 id="summary">Summary</h1>
+<p>Main points made in this report are summarized below in order of appearance.</p>
+<ul>
+<li>
+<p>Measure Validator earnings to get a better idea of how pseudo-random job assignment is affecting earnings, and get a better idea of the returns nodes are earning.</p>
+</li>
+<li>
+<p>Monitor client variations to ensure the network isn't vunerable to a bug inside of one client taking a signficant % of the validators.</p>
+</li>
+<li>
+<p>Re-adjusted tiering structure to prioritize acting honestly and efficiently for the network rather than just honestly. Inexperienced nodes were then lowerd to tier 5 (completely) and tier 4 (perfect). Tier 3 was then changed to nodes with atleast a 75%  success rate, and tier 6 was below a 75% success rate.</p>
+</li>
+<li>
+<p>Suggested scoring each validator using tier as a coefficient to epochs active. This way validators are ranked across their total contribution to the network rather than just the efficiency and accuracy of their work.</p>
+</li>
+</ul>
+
+</body>
+</html>
